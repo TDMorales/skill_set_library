@@ -9,22 +9,6 @@ This repo is designed so skills can be:
 
 ---
 
-## Safety First
-
-This repository enforces strict safety rules via **AGENTS.md**.
-
-### Hard rule
-Skills and agents **must never** read, write, modify, or delete anything in:
-- the user home directory (`~`, `/home/*`, `/Users/*`)
-- system directories (`/etc`, `/usr`, `/bin`, `/opt`, `/var`)
-- anything outside the target repository root
-
-If a user asks for unsafe access, the agent/skill must refuse and provide a repo-scoped alternative.
-
-See: `AGENTS.md`
-
----
-
 ## Repo Layout
 
 Skills live under:
@@ -47,7 +31,8 @@ Every `SKILL.md` MUST start with YAML front matter:
 ```yaml
 ---
 name: my-skill
-description: Single-line description of what the skill does.
+description: One-line description of what this skill does, written for an agent.
+short-description: Short summary for listings or menus.
 ---
 ```
 

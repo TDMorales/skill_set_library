@@ -48,6 +48,7 @@ A single "Task Spec" response in the exact required format.
 Outputs MUST:
 - Stay within the repository
 - Avoid overwriting user-authored files unless explicitly named and confirmed
+- Ask user if they would like for you to create a .codex/prompt/<prompt-optimizer-output.md> file
 
 ---
 

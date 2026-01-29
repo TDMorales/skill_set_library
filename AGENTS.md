@@ -48,6 +48,9 @@ A skill MAY:
 - Create or modify files **inside the repository**
 - Create new directories inside the repository
 - Read `.codex/skills/<skill-name>/` if needed
+- For `$skill-installer` only: read (no writes) its system skill directory from
+  `$CODEX_HOME/skills/.system/skill-installer/` or `~/.codex/skills/.system/skill-installer/`
+  to load `SKILL.md` and bundled references
 
 ### Explicitly Disallowed Scope (Hard Rule)
 A skill MUST NOT:
@@ -56,6 +59,8 @@ A skill MUST NOT:
 - Access system directories (`/etc`, `/bin`, `/usr`, `/opt`, `/var`)
 - Traverse upward via `../` beyond the repository root
 - Resolve or follow symlinks that escape the repository boundary
+  - Exception: `$skill-installer` may read its own system skill directory as
+    described in the Allowed File Scope
 
 These restrictions apply even if:
 - the agent has OS-level permissions
@@ -67,7 +72,8 @@ These restrictions apply even if:
 ## 3. Absolute Filesystem Safety Rules (Non-Negotiable)
 
 ### 🚫 Forbidden Actions
-Under **no circumstances** may a skill or agent:
+Under **no circumstances** (except the `$skill-installer` read-only exception in
+Section 2) may a skill or agent:
 
 - Delete files outside the repository
 - Modify files outside the repository
