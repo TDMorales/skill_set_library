@@ -42,7 +42,8 @@ Options:
   --experimental           Create under skills/.experimental/<skill-name>/ instead of skills/<skill-name>/.
   --with a,b,c             Create optional subfolders (comma-separated): scripts,examples,assets,references
                            Default: scripts,examples
-  --template PATH          Path to SKILL.md template. Default: skills/_template/SKILL.md then skills/_schema/SKILL.template.md
+  --template PATH          Path to a template dir or SKILL.md file.
+                           Default: skills/_template/skill/ then skills/_template/SKILL.md then skills/_schema/SKILL.template.md
   --no-validate            Do not run python tools/validate.py at the end.
   -h, --help               Show this help.
 
@@ -70,8 +71,12 @@ replace_in_file() {
 
   local tmp
   tmp="$(mktemp)"
+  # Escape replacement for sed (& and backslashes).
+  local replace_escaped
+  replace_escaped="${replace//\\/\\\\}"
+  replace_escaped="${replace_escaped//&/\\&}"
   # Use sed with a delimiter unlikely to appear
-  sed "s|${search}|${replace}|g" "$file" > "$tmp"
+  sed "s|${search}|${replace_escaped}|g" "$file" > "$tmp"
   mv "$tmp" "$file"
 }
 
@@ -108,6 +113,7 @@ DESCRIPTION="One-line description of what this skill does, written for an agent.
 EXPERIMENTAL="false"
 WITH_FOLDERS="scripts,examples"
 TEMPLATE_PATH=""
+TEMPLATE_MODE=""
 RUN_VALIDATE="true"
 
 # First positional is skill name unless it looks like an option
@@ -185,18 +191,28 @@ fi
 
 # Determine template path
 if [[ -n "$TEMPLATE_PATH" ]]; then
-  if [[ ! -f "$TEMPLATE_PATH" ]]; then
+  if [[ -d "$TEMPLATE_PATH" ]]; then
+    TEMPLATE_MODE="dir"
+  elif [[ -f "$TEMPLATE_PATH" ]]; then
+    TEMPLATE_MODE="file"
+  else
     err "Template not found: $TEMPLATE_PATH"
     exit 1
   fi
 else
   # Preferred defaults (in order)
-  if [[ -f "$SKILLS_ROOT/_template/SKILL.md" ]]; then
+  if [[ -d "$SKILLS_ROOT/_template/skill" ]]; then
+    TEMPLATE_PATH="$SKILLS_ROOT/_template/skill"
+    TEMPLATE_MODE="dir"
+  elif [[ -f "$SKILLS_ROOT/_template/SKILL.md" ]]; then
     TEMPLATE_PATH="$SKILLS_ROOT/_template/SKILL.md"
+    TEMPLATE_MODE="file"
   elif [[ -f "$SKILLS_ROOT/_schema/SKILL.template.md" ]]; then
     TEMPLATE_PATH="$SKILLS_ROOT/_schema/SKILL.template.md"
+    TEMPLATE_MODE="file"
   else
     err "No template found. Expected one of:"
+    err "  - skills/_template/skill/"
     err "  - skills/_template/SKILL.md"
     err "  - skills/_schema/SKILL.template.md"
     err "Or pass --template PATH"
@@ -213,18 +229,33 @@ info "Location: $DEST_DIR"
 mkdir -p "$DEST_DIR"
 
 # Copy template
-cp "$TEMPLATE_PATH" "$DEST_DIR/SKILL.md"
+if [[ "$TEMPLATE_MODE" == "dir" ]]; then
+  cp -R "$TEMPLATE_PATH/." "$DEST_DIR"
+else
+  cp "$TEMPLATE_PATH" "$DEST_DIR/SKILL.md"
+fi
 
-# Substitute front matter fields (strict + safe)
-# We replace the first occurrence of these exact template strings if present.
-# (Your template should contain these placeholders.)
-NAME_QUOTED="$(yaml_quote "$SKILL_NAME")"
-DESC_QUOTED="$(yaml_quote "$DESCRIPTION")"
+# Compute a short ID from the skill name (e.g., intelligent-cache -> IC)
+SKILL_ID=""
+IFS='-' read -r -a skill_parts <<< "$SKILL_NAME"
+for part in "${skill_parts[@]}"; do
+  [[ -n "$part" ]] && SKILL_ID+="${part:0:1}"
+done
+SKILL_ID="$(echo "$SKILL_ID" | tr '[:lower:]' '[:upper:]')"
 
-# Replace "name: my-skill" and "description: One-line ..."
-# Keep replacements compatible whether template uses quoted or unquoted values.
-replace_in_file "$DEST_DIR/SKILL.md" "^name: .*" "name: ${SKILL_NAME}"
-replace_in_file "$DEST_DIR/SKILL.md" "^description: .*" "description: ${DESCRIPTION}"
+# Substitute placeholders across all files
+while IFS= read -r -d '' file; do
+  replace_in_file "$file" "__SKILL_NAME__" "$SKILL_NAME"
+  replace_in_file "$file" "__SKILL_DESCRIPTION__" "$DESCRIPTION"
+  replace_in_file "$file" "__SKILL_ID__" "$SKILL_ID"
+  replace_in_file "$file" "__SOURCE_1__" "TBD"
+done < <(find "$DEST_DIR" -type f -print0)
+
+# Fallback: replace name/description lines if placeholders were not used
+if [[ -f "$DEST_DIR/SKILL.md" ]]; then
+  replace_in_file "$DEST_DIR/SKILL.md" "^name: .*" "name: ${SKILL_NAME}"
+  replace_in_file "$DEST_DIR/SKILL.md" "^description: .*" "description: ${DESCRIPTION}"
+fi
 
 # Create optional subfolders
 IFS=',' read -r -a folders <<< "$WITH_FOLDERS"
@@ -250,6 +281,17 @@ if [[ -d "$DEST_DIR/examples" && ! -e "$DEST_DIR/examples/README.md" ]]; then
 Add safe, repo-scoped examples of how this skill should be used.
 Do not reference home/system paths. Follow AGENTS.md.
 EOF
+fi
+
+# Ensure a language example template exists when examples/ is requested
+if [[ -d "$DEST_DIR/examples" && ! -e "$DEST_DIR/examples/example_language.md" ]]; then
+  TEMPLATE_EXAMPLE="$SKILLS_ROOT/_template/skill/examples/example_language.md"
+  if [[ -f "$TEMPLATE_EXAMPLE" ]]; then
+    cp "$TEMPLATE_EXAMPLE" "$DEST_DIR/examples/example_language.md"
+    replace_in_file "$DEST_DIR/examples/example_language.md" "__SKILL_NAME__" "$SKILL_NAME"
+    replace_in_file "$DEST_DIR/examples/example_language.md" "__SKILL_DESCRIPTION__" "$DESCRIPTION"
+    replace_in_file "$DEST_DIR/examples/example_language.md" "__SKILL_ID__" "$SKILL_ID"
+  fi
 fi
 
 info "Scaffold created."

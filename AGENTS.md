@@ -38,6 +38,35 @@ Optional but allowed:
 
 ---
 
+## 1A. Skill Creation Template (Required Process)
+
+Use the same repeatable sequence for every new skill:
+
+1. Define/verify `SKILL.md`
+   - Purpose, when-to-use, definitions
+   - Hard invariants
+   - Procedure (audit, plan, implement)
+   - Validation checklist
+   - Output contracts + audit findings schema
+   - Refusal conditions
+2. Create minimal folder skeleton
+   - `examples/README.md` (index + audit procedure + audit schema)
+   - `examples/<skill>_<language>.md` (broken + correct + explicit)
+   - `references/SOURCES.md`
+3. Add broken/correct/explicit examples
+   - Broken: violate named invariants
+   - Correct: minimal compliant example
+   - Explicit: a seam or edge case
+4. Mirror audit mode
+   - Same procedure + schema in `SKILL.md` and `examples/README.md`
+5. Consistency checks
+   - Invariant IDs referenced in findings schema
+   - README and SKILL stay in sync
+
+Preferred scaffold root: `skills/_template/skill/`
+
+---
+
 ## 2. Repository-Scoped Execution Model
 
 All skills are designed to be executed **from within a target repository**.

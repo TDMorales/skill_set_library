@@ -46,7 +46,8 @@ KEBAB_CASE_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Heuristic "unsafe" patterns. This is intentionally strict.
 UNSAFE_PATTERNS: List[Tuple[str, re.Pattern]] = [
     # Home directory references
-    ("home-tilde", re.compile(r"(^|[^\w])~([/\\]|$)")),
+    # Avoid matching markdown code fences like "~~~"
+    ("home-tilde", re.compile(r"(^|[^\w])(?<!~)~([/\\]|$)")),
     ("home-env", re.compile(r"\$(HOME|USERPROFILE)\b")),
     ("home-path-linux", re.compile(r"(^|[^\w])/(home|root)/")),
     ("home-path-macos", re.compile(r"(^|[^\w])/Users/")),
@@ -89,6 +90,15 @@ SKIP_SKILLS = {"_template"}
 
 # Max file size (bytes) to scan as text
 MAX_SCAN_BYTES = 800_000  # 800KB
+
+# Required markers for example files under examples/
+EXAMPLE_REQUIRED_MARKERS = [
+    "## ❌ BROKEN EXAMPLE (DO NOT COPY)",
+    "What breaks",
+    "BROKEN DIFF (DO NOT COPY)",
+    "--- a/",
+    "+++ b/",
+]
 
 
 @dataclass
@@ -159,41 +169,36 @@ def read_text_safely(path: Path) -> Optional[str]:
 
 def parse_front_matter(text: str) -> Tuple[Dict[str, str], int]:
     """
-    Very small front matter parser.
+    Lightweight front matter parser that allows nested YAML.
     Expects:
       ---
-      key: value
-      key2: value
+      <any yaml>
       ---
-    Returns (dict, end_index_of_front_matter) or ({}, -1) if not present.
+    Returns (dict with at least name/description if found, end_index) or ({}, -1).
     """
     lines = text.splitlines()
     if len(lines) < 3 or lines[0].strip() != "---":
         return {}, -1
 
-    fm: Dict[str, str] = {}
-    i = 1
-    while i < len(lines):
-        line = lines[i].rstrip("\n")
-        if line.strip() == "---":
-            return fm, i
-        # Allow empty lines and comments
-        if not line.strip() or line.strip().startswith("#"):
-            i += 1
-            continue
-        # Parse "key: value" only (keep it strict)
-        m = re.match(r"^([A-Za-z0-9_-]+)\s*:\s*(.+?)\s*$", line)
-        if not m:
-            # Stop parsing on non-conforming line to avoid accidental misreads
-            return {}, -1
-        key, val = m.group(1), m.group(2)
-        # strip surrounding quotes if present
-        if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
-            val = val[1:-1]
-        fm[key] = val
-        i += 1
+    end_idx = -1
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            end_idx = i
+            break
+    if end_idx == -1:
+        return {}, -1
 
-    return {}, -1
+    block = "\n".join(lines[1:end_idx])
+    fm: Dict[str, str] = {}
+    for key in ("name", "description"):
+        m = re.search(rf"^{key}\s*:\s*(.+?)\s*$", block, re.MULTILINE)
+        if m:
+            val = m.group(1).strip()
+            if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                val = val[1:-1]
+            fm[key] = val
+
+    return fm, end_idx
 
 
 def path_within(base: Path, target: Path) -> bool:
@@ -219,6 +224,14 @@ def should_skip_file(path: Path) -> bool:
     if path.suffix.lower() in SKIP_EXTS:
         return True
     return False
+
+
+def missing_example_markers(content: str) -> List[str]:
+    missing: List[str] = []
+    for marker in EXAMPLE_REQUIRED_MARKERS:
+        if marker not in content:
+            missing.append(marker)
+    return missing
 
 
 def validate_skill_dir(repo_root: Path, skill_dir: Path, verbose: bool) -> List[Issue]:
@@ -328,6 +341,17 @@ def validate_skill_dir(repo_root: Path, skill_dir: Path, verbose: bool) -> List[
                     str(p),
                     f"Unsafe patterns detected: {', '.join(file_hits)}"
                 ))
+
+            # Enforce broken example outline for examples/*.md (excluding README.md)
+            if p.suffix.lower() == ".md" and "examples" in p.parts and p.name.lower() != "readme.md":
+                missing = missing_example_markers(content)
+                if missing:
+                    issues.append(Issue(
+                        "ERROR",
+                        str(p),
+                        "Examples must include the broken example outline markers: "
+                        + ", ".join(missing)
+                    ))
 
     # Disallow symlink directories that escape repo
     for p in skill_dir.rglob("*"):
