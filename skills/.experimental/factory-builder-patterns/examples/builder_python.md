@@ -1,6 +1,6 @@
 # Builder – Python Example
 
-Minimal Builder example with step methods and a build gate that prevents invalid partial state.
+Minimal Builder example with an abstract builder interface, step methods, a build gate that prevents invalid partial state, and a reset mechanism for reuse.
 
 ---
 
@@ -24,9 +24,11 @@ What breaks
 # - if self._title is None or self._body is None:
 # -     raise ValueError("title and body are required")
 # - footer = self._footer or ""
-# - return ReportDraft(self._title, self._body, footer)
+# - result = ReportDraft(self._title, self._body, footer)
+# - self.reset()
+# - return result
 # + return ReportDraft(self._title or "", self._body or "", self._footer or "")
-#   # ❌ BUG: silently accepts invalid partial state.
+#   # ❌ BUG: silently accepts invalid partial state; no reset after build.
 # =============================================================================
 ~~~
 
@@ -35,6 +37,9 @@ What breaks
 ## ✅ CORRECT EXAMPLE
 
 ~~~python
+from abc import ABC, abstractmethod
+
+
 class ReportDraft:
     def __init__(self, title: str, body: str, footer: str):
         self.title = title
@@ -42,21 +47,43 @@ class ReportDraft:
         self.footer = footer
 
 
-class ReportBuilder:
+class ReportBuilder(ABC):
+    """Abstract builder interface — declares step contract for all concrete builders."""
+
+    @abstractmethod
+    def with_title(self, title: str) -> "ReportBuilder": ...
+
+    @abstractmethod
+    def with_body(self, body: str) -> "ReportBuilder": ...
+
+    @abstractmethod
+    def with_footer(self, footer: str) -> "ReportBuilder": ...
+
+    @abstractmethod
+    def build(self) -> ReportDraft: ...
+
+    @abstractmethod
+    def reset(self) -> None: ...
+
+
+class StandardReportBuilder(ReportBuilder):
     def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
         self._title: str | None = None
         self._body: str | None = None
         self._footer: str | None = None
 
-    def with_title(self, title: str) -> "ReportBuilder":
+    def with_title(self, title: str) -> "StandardReportBuilder":
         self._title = title
         return self
 
-    def with_body(self, body: str) -> "ReportBuilder":
+    def with_body(self, body: str) -> "StandardReportBuilder":
         self._body = body
         return self
 
-    def with_footer(self, footer: str) -> "ReportBuilder":
+    def with_footer(self, footer: str) -> "StandardReportBuilder":
         self._footer = footer
         return self
 
@@ -64,11 +91,14 @@ class ReportBuilder:
         if self._title is None or self._body is None:
             raise ValueError("title and body are required")
         footer = self._footer or ""
-        return ReportDraft(self._title, self._body, footer)
+        result = ReportDraft(self._title, self._body, footer)
+        self.reset()
+        return result
 
 
+builder: ReportBuilder = StandardReportBuilder()
 report = (
-    ReportBuilder()
+    builder
     .with_title("Q1")
     .with_body("Summary")
     .with_footer("Confidential")
@@ -79,21 +109,32 @@ print(report.title)
 
 ---
 
-## ▶ EXPLICIT EXAMPLE (DIRECTOR ONLY IF REUSED)
+## ▶ EXPLICIT EXAMPLE (DIRECTOR WITH SETTER + BOTH PATHS)
 
-Use a Director when you have repeated construction sequences.
+Director accepts the builder via a setter so it can be swapped at runtime.
+Client code works both with and without the Director.
 
 ~~~python
 class ReportDirector:
-    def __init__(self, builder: ReportBuilder) -> None:
+    def __init__(self) -> None:
+        self._builder: ReportBuilder | None = None
+
+    @property
+    def builder(self) -> ReportBuilder:
+        if self._builder is None:
+            raise ValueError("builder not set")
+        return self._builder
+
+    @builder.setter
+    def builder(self, builder: ReportBuilder) -> None:
         self._builder = builder
 
-    def minimal(self) -> ReportDraft:
-        return self._builder.with_title("Untitled").with_body("").build()
+    def minimal_report(self) -> ReportDraft:
+        return self.builder.with_title("Untitled").with_body("").build()
 
-    def full(self) -> ReportDraft:
+    def full_report(self) -> ReportDraft:
         return (
-            self._builder
+            self.builder
             .with_title("Q1")
             .with_body("Summary")
             .with_footer("Confidential")
@@ -101,6 +142,14 @@ class ReportDirector:
         )
 
 
-director = ReportDirector(ReportBuilder())
-print(director.full().title)
+# With Director
+director = ReportDirector()
+director.builder = StandardReportBuilder()
+print(director.full_report().title)
+
+# Without Director (builder reused directly — reset clears state between builds)
+builder = StandardReportBuilder()
+first = builder.with_title("Report A").with_body("Body A").build()
+second = builder.with_title("Report B").with_body("Body B").build()
+print(first.title, second.title)
 ~~~

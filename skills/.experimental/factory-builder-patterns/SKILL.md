@@ -66,8 +66,9 @@ If any precondition fails: **stop** and output a minimal plan to gather missing 
 
 ## Builder (intent)
 - Construct a complex object step-by-step.
-- Same construction process can create different representations.
-- Optional: **Director** orchestrates steps (only if it materially improves reuse/readability).
+- An **abstract Builder interface** declares step methods so the same construction process can create different representations via interchangeable concrete builders.
+- A **reset mechanism** clears internal state so a single builder instance can produce multiple products in sequence.
+- Optional: **Director** orchestrates steps (only if it materially improves reuse/readability). Director accepts the builder via a setter to allow runtime swapping.
 
 ---
 
@@ -90,8 +91,10 @@ FM-5. Creator is not just a thin wrapper around `if/else` unless it reduces coup
 B-1. There is a dedicated **Builder** with step methods and a terminal `build()` (or equivalent) gate.
 B-2. Builder steps are ordered/validated: invalid partial states must be prevented (via typing, runtime checks, or step constraints).
 B-3. Built result is *coherent*: `build()` returns a fully-initialized object/value.
-B-4. Optional Director is used only if it eliminates repeated construction choreography across call sites.
+B-4. Optional Director is used only if it eliminates repeated construction choreography across call sites. When present, the Director accepts the builder via a setter (not only constructor) so it can be swapped at runtime.
 B-5. Builder does not become a “god object”: keep steps tight, do not embed unrelated business logic.
+B-6. When multiple builder implementations exist (or are anticipated), an **abstract Builder interface** (ABC / interface / protocol) declares the step contract so concrete builders are interchangeable.
+B-7. Builders that may produce multiple products in sequence provide a **reset mechanism** (`reset()` or auto-reset in `build()`) to clear internal state between builds.
 
 ---
 
@@ -124,12 +127,12 @@ The assistant **must** follow this exact sequence:
 
 1. **Identify pattern surfaces**
    - Factory Method: creators, factory methods, product abstractions, creation seams.
-   - Builder: builders, step methods, build() gates, optional directors.
+   - Builder: abstract builder interfaces, concrete builders, step methods, build() gates, reset mechanisms, optional directors.
 2. **Locate call sites**
    - Trace instantiation points for concrete products or built results.
 3. **Map flows**
    - Factory Method: selection seam → creator → product → client usage.
-   - Builder: step ordering → validation → build() → result usage.
+   - Builder: abstract interface → concrete builder → step ordering → validation → build() / reset → result usage.
 4. **Check invariants**
    - Evaluate FM-* and/or B-* items against code evidence.
    - Prefer concrete evidence (file paths + line ranges) over assumptions.
@@ -150,7 +153,7 @@ Audit Mode **must not** end without:
    - Builder: where construction has many parameters/optional parts, or multiple representations.
 2. **Propose minimal structure**
    - Factory Method: Product abstraction + Creator + Concrete creators.
-   - Builder: Builder + Product/Result + (optional) Director.
+   - Builder: Abstract Builder interface + Concrete Builder(s) + Product/Result + (optional) Director with setter.
 3. **Define interfaces and names**
    - Choose names aligned with domain language (not “Factory” everywhere).
 4. **Map files**
@@ -167,7 +170,7 @@ Audit Mode **must not** end without:
 
 ## Implement Mode Procedure (code changes)
 1. **Create/adjust types first**
-   - Add Product abstraction (FM) or Builder + Result type (B).
+   - Add Product abstraction (FM) or abstract Builder interface + Concrete Builder + Result type (B).
 2. **Refactor call sites gradually**
    - Keep behavior stable by introducing adapter layers if needed.
 3. **Minimize diff blast radius**
@@ -202,8 +205,10 @@ Audit Mode **must not** end without:
 - [ ] B-1 Builder has step methods and a `build()` gate.
 - [ ] B-2 Invalid partial states are prevented or rejected with clear errors.
 - [ ] B-3 `build()` returns a complete, coherent result.
-- [ ] B-4 Director used only if it removes repetition; otherwise omitted.
+- [ ] B-4 Director used only if it removes repetition; accepts builder via setter for runtime swapping.
 - [ ] B-5 Builder stays focused; no unrelated business logic added.
+- [ ] B-6 Abstract Builder interface exists when multiple representations are needed or anticipated.
+- [ ] B-7 Reset mechanism provided for builder reuse (explicit `reset()` or auto-reset in `build()`).
 
 ## Behavioral checks
 - [ ] Existing tests still pass (or audit/plan explains gaps).

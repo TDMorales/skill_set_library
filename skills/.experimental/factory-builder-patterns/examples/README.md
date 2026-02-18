@@ -12,7 +12,7 @@ The assistant **must** follow this exact sequence:
 
 1. **Identify pattern surfaces**
    - Factory Method: creators, factory methods, product abstractions, creation seams.
-   - Builder: builders, step methods, build() gates, optional directors.
+   - Builder: abstract builder interfaces, concrete builders, step methods, build() gates, reset mechanisms, optional directors.
 2. **Locate call sites**
    - Trace instantiation points for concrete products or built results.
 3. **Map flows**
@@ -154,30 +154,47 @@ console.log(creator.generate());
 
 ---
 
-## Builder (Python, no Director)
+## Builder (Python)
 
 ```python
+from abc import ABC, abstractmethod
+
 class ReportDraft:
     def __init__(self, title: str, body: str, footer: str):
         self.title = title
         self.body = body
         self.footer = footer
 
-class ReportBuilder:
+class ReportBuilder(ABC):
+    @abstractmethod
+    def with_title(self, title: str) -> "ReportBuilder": ...
+    @abstractmethod
+    def with_body(self, body: str) -> "ReportBuilder": ...
+    @abstractmethod
+    def with_footer(self, footer: str) -> "ReportBuilder": ...
+    @abstractmethod
+    def build(self) -> ReportDraft: ...
+    @abstractmethod
+    def reset(self) -> None: ...
+
+class StandardReportBuilder(ReportBuilder):
     def __init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
         self._title: str | None = None
         self._body: str | None = None
         self._footer: str | None = None
 
-    def with_title(self, title: str) -> "ReportBuilder":
+    def with_title(self, title: str) -> "StandardReportBuilder":
         self._title = title
         return self
 
-    def with_body(self, body: str) -> "ReportBuilder":
+    def with_body(self, body: str) -> "StandardReportBuilder":
         self._body = body
         return self
 
-    def with_footer(self, footer: str) -> "ReportBuilder":
+    def with_footer(self, footer: str) -> "StandardReportBuilder":
         self._footer = footer
         return self
 
@@ -185,10 +202,13 @@ class ReportBuilder:
         if self._title is None or self._body is None:
             raise ValueError("title and body are required")
         footer = self._footer or ""
-        return ReportDraft(self._title, self._body, footer)
+        result = ReportDraft(self._title, self._body, footer)
+        self.reset()
+        return result
 
+builder: ReportBuilder = StandardReportBuilder()
 report = (
-    ReportBuilder()
+    builder
     .with_title("Q1")
     .with_body("Summary")
     .with_footer("Confidential")
@@ -196,7 +216,7 @@ report = (
 )
 ```
 
-## Builder (TypeScript, no Director)
+## Builder (TypeScript)
 
 ```ts
 type ReportDraft = {
@@ -205,7 +225,15 @@ type ReportDraft = {
   footer: string;
 };
 
-class ReportBuilder {
+interface ReportBuilder {
+  withTitle(title: string): ReportBuilder;
+  withBody(body: string): ReportBuilder;
+  withFooter(footer: string): ReportBuilder;
+  build(): ReportDraft;
+  reset(): void;
+}
+
+class StandardReportBuilder implements ReportBuilder {
   private title?: string;
   private body?: string;
   private footer?: string;
@@ -229,15 +257,24 @@ class ReportBuilder {
     if (!this.title || !this.body) {
       throw new Error("title and body are required");
     }
-    return {
+    const result: ReportDraft = {
       title: this.title,
       body: this.body,
       footer: this.footer ?? "",
     };
+    this.reset();
+    return result;
+  }
+
+  reset(): void {
+    this.title = undefined;
+    this.body = undefined;
+    this.footer = undefined;
   }
 }
 
-const report = new ReportBuilder()
+const builder: ReportBuilder = new StandardReportBuilder();
+const report = builder
   .withTitle("Q1")
   .withBody("Summary")
   .withFooter("Confidential")
@@ -249,28 +286,52 @@ const report = new ReportBuilder()
 ## Builder + Optional Director (when repeated choreography exists)
 
 Use a Director only if you have 2+ repeated build sequences that would otherwise be duplicated.
+Director accepts the builder via a setter so it can be swapped at runtime.
 
 ```python
 class ReportDirector:
-    def __init__(self, builder: "ReportBuilder") -> None:
+    def __init__(self) -> None:
+        self._builder: ReportBuilder | None = None
+
+    @property
+    def builder(self) -> ReportBuilder:
+        if self._builder is None:
+            raise ValueError("builder not set")
+        return self._builder
+
+    @builder.setter
+    def builder(self, builder: ReportBuilder) -> None:
         self._builder = builder
 
     def minimal_report(self) -> ReportDraft:
-        return self._builder.with_title("Untitled").with_body("").build()
+        return self.builder.with_title("Untitled").with_body("").build()
 
     def full_report(self) -> ReportDraft:
         return (
-            self._builder
+            self.builder
             .with_title("Q1")
             .with_body("Summary")
             .with_footer("Confidential")
             .build()
         )
+
+director = ReportDirector()
+director.builder = StandardReportBuilder()
+print(director.full_report().title)
 ```
 
 ```ts
 class ReportDirector {
-  constructor(private builder: ReportBuilder) {}
+  private _builder?: ReportBuilder;
+
+  set builder(builder: ReportBuilder) {
+    this._builder = builder;
+  }
+
+  get builder(): ReportBuilder {
+    if (!this._builder) throw new Error("builder not set");
+    return this._builder;
+  }
 
   minimalReport(): ReportDraft {
     return this.builder.withTitle("Untitled").withBody("").build();
@@ -284,4 +345,8 @@ class ReportDirector {
       .build();
   }
 }
+
+const director = new ReportDirector();
+director.builder = new StandardReportBuilder();
+console.log(director.fullReport().title);
 ```
