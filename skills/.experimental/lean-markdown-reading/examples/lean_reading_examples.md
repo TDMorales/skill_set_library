@@ -362,7 +362,7 @@ SELF-AUDIT CHECKLIST
   declare the gap, scope the read, stop at extraction
 - I-2 and I-8 work together: I-2 is the default, I-8 is the narrow
   named exception. An agent that re-reads without declaring a gap
-  has violated I-2 with no valid I-8 defense.
+  has violated I-2 with no valid I-8 defense. 
 
 **Step 4 — No-heading fallback:**
 
